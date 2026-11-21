@@ -136,7 +136,7 @@ jobs:
             $GRADLE_BIN assembleRelease --init-script /tmp/shipsign-init.gradle \
               -Pandroid.injected.build.abi=arm64-v8a \
               -x lint -x test \
-              --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+              --no-build-cache --no-configuration-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
           fi
 
       - name: 4. Path B — Fallback ARM64 Debug Build
@@ -154,7 +154,7 @@ jobs:
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
               -Pandroid.injected.build.abi=arm64-v8a \
               -x lint -x test \
-              --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+              --no-build-cache --no-configuration-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
           fi
 
       - name: 5. Path C — Universal Fallback Build
@@ -169,7 +169,7 @@ jobs:
           else
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
               -x lint -x test \
-              --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+              --no-build-cache --no-configuration-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
           fi
 
       - name: 6. Upload Built APK
@@ -177,3 +177,4 @@ jobs:
         with:
           name: ShipSign-APK
           path: "**/*.apk"
+          compression-level: 0
