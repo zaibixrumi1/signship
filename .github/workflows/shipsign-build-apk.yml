@@ -70,6 +70,7 @@ jobs:
             echo "PROJECT_DIR=$ABS_PROJECT_DIR" >> "$GITHUB_ENV"
 
             cd "$ABS_PROJECT_DIR"
+            sed -i '/foojay-resolver-convention/d' settings.gradle settings.gradle.kts 2>/dev/null || true
             [ -f ".env.example" ] && [ ! -f ".env" ] && cp .env.example .env
             printf "sdk.dir=%s\n" "${ANDROID_HOME:-/opt/android-sdk-linux}" > local.properties
 
