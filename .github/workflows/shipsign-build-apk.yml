@@ -1,0 +1,179 @@
+name: ShipSign Modular Build (APK)
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      stack: ${{ steps.scan.outputs.stack }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Detect Project Type
+        id: scan
+        run: |
+          set -e
+          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          [ -n "$ZIP_FILE" ] && unzip -q "$ZIP_FILE" -d extracted_project
+
+          if find . -not -path '*/.*' -name "pubspec.yaml" | grep -q .; then
+            echo "stack=flutter" >> "$GITHUB_OUTPUT"
+          elif find . -not -path '*/.*' -not -path '*/node_modules/*' -name "package.json" | grep -q .; then
+            echo "stack=web" >> "$GITHUB_OUTPUT"
+          else
+            echo "stack=android" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: detect
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/zaibixrumi1/shipsign-builder:${{ needs.detect.outputs.stack }}
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: 2. Extract & Self-Heal Configuration
+        env:
+          SHIPSIGN_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
+        run: |
+          set -e
+          ROOT_DIR=$(pwd)
+          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          [ -n "$ZIP_FILE" ] && unzip -q "$ZIP_FILE" -d extracted_project
+          find . \( -name "metadata.json" -o -name "applet_access_history.json" -o -name ".DS_Store" \) -delete
+
+          STACK="${{ needs.detect.outputs.stack }}"
+          if [ "$STACK" = "flutter" ]; then
+            PROJECT_DIR=$(dirname "$(find . -not -path '*/.*' -name "pubspec.yaml" | head -n 1)")
+            echo "PROJECT_DIR=$(cd "$PROJECT_DIR" && pwd)" >> "$GITHUB_ENV"
+            printf "sdk.dir=%s\n" "${ANDROID_HOME:-/opt/android-sdk-linux}" > "$PROJECT_DIR/android/local.properties"
+          else
+            if [ "$STACK" = "web" ]; then
+              PKG_FILE=$(find . -not -path '*/.*' -not -path '*/node_modules/*' -name "package.json" | head -n 1)
+              cd "$(dirname "$PKG_FILE")"
+              [ -f ".env.example" ] && [ ! -f ".env" ] && cp .env.example .env
+              npm install --legacy-peer-deps
+              if grep -q "@capacitor/core" package.json; then
+                grep -q '"build"' package.json && (npm run build || true)
+                npx cap sync android
+              fi
+              cd "$ROOT_DIR"
+            fi
+
+            GRADLE_FILE=$(find . -not -path '*/.*' -not -path '*/node_modules/*' \( -name "settings.gradle" -o -name "settings.gradle.kts" -o -name "build.gradle" -o -name "build.gradle.kts" \) | head -n 1)
+            [ -z "$GRADLE_FILE" ] && echo "No Gradle configuration found." && exit 1
+            PROJECT_DIR=$(dirname "$GRADLE_FILE")
+            [ "$(basename "$PROJECT_DIR")" = "app" ] && PROJECT_DIR=$(dirname "$PROJECT_DIR")
+            ABS_PROJECT_DIR=$(cd "$PROJECT_DIR" && pwd)
+            echo "PROJECT_DIR=$ABS_PROJECT_DIR" >> "$GITHUB_ENV"
+
+            cd "$ABS_PROJECT_DIR"
+            [ -f ".env.example" ] && [ ! -f ".env" ] && cp .env.example .env
+            printf "sdk.dir=%s\n" "${ANDROID_HOME:-/opt/android-sdk-linux}" > local.properties
+
+            if [ -n "$SHIPSIGN_SECRET" ]; then
+              printf "\nGITHUB_CLIENT_SECRET=%s\n" "$SHIPSIGN_SECRET" >> .env
+              printf "GITHUB_CLIENT_SECRET=%s\n" "$SHIPSIGN_SECRET" >> local.properties
+            fi
+
+            if [ ! -f "debug.keystore" ]; then
+              keytool -genkeypair -v -keystore debug.keystore -storetype JKS \
+                -keyalg RSA -keysize 2048 -validity 10000 \
+                -alias androiddebugkey -storepass android -keypass android \
+                -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
+            fi
+
+            cat << 'EOF' > /tmp/shipsign-init.gradle
+            allprojects {
+                afterEvaluate { project ->
+                    if (project.extensions.findByName("android") != null) {
+                        def androidExt = project.extensions.getByName("android")
+                        androidExt.signingConfigs.all { sc ->
+                            if (sc.storeFile == null || !sc.storeFile.exists()) {
+                                sc.storeFile = new File("${System.getenv('PROJECT_DIR')}/debug.keystore")
+                                sc.storePassword = "android"
+                                sc.keyAlias = "androiddebugkey"
+                                sc.keyPassword = "android"
+                            }
+                        }
+                        try {
+                            androidExt.lint.checkReleaseBuilds = false
+                            androidExt.lint.abortOnError = false
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
+            EOF
+
+            if grep -rq "google-services" . 2>/dev/null && [ ! -f "app/google-services.json" ] && [ -d "app" ]; then
+              APP_ID=$(grep -oE 'applicationId\s*=?\s*"[^"]+"' app/build.gradle* 2>/dev/null | head -n 1 | cut -d'"' -f2)
+              APP_ID=${APP_ID:-com.shipsign.placeholder}
+              printf '{"project_info":{"project_number":"100000000000","project_id":"shipsign-ci","storage_bucket":"shipsign-ci.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:100000000000:android:0000000000000000","android_client_info":{"package_name":"%s"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDummyKeyForCiCompilationOnly00000"}]}]}\n' "$APP_ID" > app/google-services.json
+            fi
+
+            if [ -f "./gradlew" ]; then
+              sed -i 's/\r$//' gradlew && chmod +x gradlew
+              echo "GRADLE_BIN=./gradlew" >> "$GITHUB_ENV"
+            else
+              echo "GRADLE_BIN=gradle" >> "$GITHUB_ENV"
+            fi
+          fi
+
+      - name: 3. Path A — Fast ARM64 Release Build
+        id: path_a
+        continue-on-error: true
+        env:
+          GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          if [ "${{ needs.detect.outputs.stack }}" = "flutter" ]; then
+            flutter pub get
+            flutter build apk --release --target-platform android-arm64
+          else
+            $GRADLE_BIN assembleRelease --init-script /tmp/shipsign-init.gradle \
+              -Pandroid.injected.build.abi=arm64-v8a \
+              -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test \
+              --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+          fi
+
+      - name: 4. Path B — Fallback ARM64 Debug Build
+        id: path_b
+        if: steps.path_a.outcome != 'success'
+        continue-on-error: true
+        env:
+          GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          if [ "${{ needs.detect.outputs.stack }}" = "flutter" ]; then
+            flutter build apk --debug --target-platform android-arm64
+          else
+            $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
+              -Pandroid.injected.build.abi=arm64-v8a \
+              -x lint -x test \
+              --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+          fi
+
+      - name: 5. Path C — Universal Fallback Build
+        if: steps.path_a.outcome != 'success' && steps.path_b.outcome != 'success'
+        env:
+          GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          if [ "${{ needs.detect.outputs.stack }}" = "flutter" ]; then
+            flutter build apk --debug
+          else
+            $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
+              -x lint -x test \
+              --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+          fi
+
+      - name: 6. Upload Built APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: ShipSign-APK
+          path: "**/*.apk"
