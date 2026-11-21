@@ -99,6 +99,14 @@ jobs:
               '                    sc.keyPassword = "android"' \
               '                }' \
               '            }' \
+              '            if (project.hasProperty("SHIPSIGN_ARM64_ONLY")) {' \
+              '                try {' \
+              '                    if (!androidExt.splits.abi.isEnable) {' \
+              '                        androidExt.defaultConfig.ndk.abiFilters.clear()' \
+              '                        androidExt.defaultConfig.ndk.abiFilters.add("arm64-v8a")' \
+              '                    }' \
+              '                } catch (Exception ignored) {}' \
+              '            }' \
               '            try {' \
               '                androidExt.lint.checkReleaseBuilds = false' \
               '                androidExt.lint.abortOnError = false' \
@@ -134,7 +142,7 @@ jobs:
             flutter build apk --release --target-platform android-arm64
           else
             $GRADLE_BIN assembleRelease --init-script /tmp/shipsign-init.gradle \
-              -Pandroid.injected.build.abi=arm64-v8a \
+              -PSHIPSIGN_ARM64_ONLY=true \
               -x lint -x test \
               --no-build-cache --no-configuration-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
           fi
@@ -152,7 +160,7 @@ jobs:
             flutter build apk --debug --target-platform android-arm64
           else
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
-              -Pandroid.injected.build.abi=arm64-v8a \
+              -PSHIPSIGN_ARM64_ONLY=true \
               -x lint -x test \
               --no-build-cache --no-configuration-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
           fi
@@ -176,5 +184,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ShipSign-APK
-          path: "**/*.apk"
+          path: "**/outputs/apk/**/*.apk"
           compression-level: 0
