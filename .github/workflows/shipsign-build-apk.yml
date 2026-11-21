@@ -75,7 +75,7 @@ jobs:
 
             touch gradle.properties
             sed -i '/org\.gradle\.jvmargs/d;/org\.gradle\.parallel/d;/org\.gradle\.caching/d' gradle.properties
-            printf '\norg.gradle.jvmargs=-Xmx5g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g\norg.gradle.parallel=true\norg.gradle.caching=true\n' >> gradle.properties
+            printf '\norg.gradle.jvmargs=-Xmx3584m -XX:+UseParallelGC -XX:MaxMetaspaceSize=768m\norg.gradle.parallel=true\norg.gradle.caching=true\n' >> gradle.properties
 
             if [ -n "$SHIPSIGN_SECRET" ]; then
               printf "\nGITHUB_CLIENT_SECRET=%s\n" "$SHIPSIGN_SECRET" >> .env
@@ -106,13 +106,6 @@ jobs:
               '                androidExt.lint.checkReleaseBuilds = false' \
               '                androidExt.lint.abortOnError = false' \
               '            } catch (Exception ignored) {}' \
-              '        }' \
-              '    }' \
-              '    tasks.configureEach { task ->' \
-              '        if (task.name.contains("ArtProfile") ||' \
-              '            task.name.contains("NativeSymbolTables") ||' \
-              '            task.name.contains("NativeDebugMetadata")) {' \
-              '            task.enabled = false' \
               '        }' \
               '    }' \
               '}' > /tmp/shipsign-init.gradle
