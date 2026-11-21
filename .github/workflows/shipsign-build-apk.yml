@@ -73,6 +73,11 @@ jobs:
             [ -f ".env.example" ] && [ ! -f ".env" ] && cp .env.example .env
             printf "sdk.dir=%s\n" "${ANDROID_HOME:-/opt/android-sdk-linux}" > local.properties
 
+            # Override project gradle.properties so Gradle uses 5GB RAM and parallel execution
+            touch gradle.properties
+            sed -i '/org\.gradle\.jvmargs/d;/org\.gradle\.parallel/d;/org\.gradle\.caching/d' gradle.properties
+            printf '\norg.gradle.jvmargs=-Xmx5g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g\norg.gradle.parallel=true\norg.gradle.caching=true\n' >> gradle.properties
+
             if [ -n "$SHIPSIGN_SECRET" ]; then
               printf "\nGITHUB_CLIENT_SECRET=%s\n" "$SHIPSIGN_SECRET" >> .env
               printf "GITHUB_CLIENT_SECRET=%s\n" "$SHIPSIGN_SECRET" >> local.properties
@@ -104,6 +109,14 @@ jobs:
               '            } catch (Exception ignored) {}' \
               '        }' \
               '    }' \
+              '    tasks.configureEach { task ->' \
+              '        if (task.name.contains("ArtProfile") ||' \
+              '            task.name.contains("NativeSymbolTables") ||' \
+              '            task.name.contains("NativeDebugMetadata") ||' \
+              '            task.name.contains("optimizeReleaseResources")) {' \
+              '            task.enabled = false' \
+              '        }' \
+              '    }' \
               '}' > /tmp/shipsign-init.gradle
 
             if grep -rq "google-services" . 2>/dev/null && [ ! -f "app/google-services.json" ] && [ -d "app" ]; then
@@ -125,7 +138,6 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
-          GRADLE_OPTS: "-Xmx4g -XX:+UseParallelGC -Dorg.gradle.daemon=false"
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -135,7 +147,6 @@ jobs:
           else
             $GRADLE_BIN assembleRelease --init-script /tmp/shipsign-init.gradle \
               -Pandroid.injected.build.abi=arm64-v8a \
-              -Pkotlin.incremental=false \
               -x lint -x test \
               --build-cache --parallel --no-daemon
           fi
@@ -146,7 +157,6 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
-          GRADLE_OPTS: "-Xmx4g -XX:+UseParallelGC -Dorg.gradle.daemon=false"
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -155,7 +165,6 @@ jobs:
           else
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
               -Pandroid.injected.build.abi=arm64-v8a \
-              -Pkotlin.incremental=false \
               -x lint -x test \
               --build-cache --parallel --no-daemon
           fi
@@ -164,7 +173,6 @@ jobs:
         if: steps.path_a.outcome != 'success' && steps.path_b.outcome != 'success'
         env:
           GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
-          GRADLE_OPTS: "-Xmx4g -XX:+UseParallelGC -Dorg.gradle.daemon=false"
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -172,7 +180,6 @@ jobs:
             flutter build apk --debug
           else
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
-              -Pkotlin.incremental=false \
               -x lint -x test \
               --parallel --no-daemon
           fi
