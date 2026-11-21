@@ -85,27 +85,26 @@ jobs:
                 -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
             fi
 
-            cat << 'EOF' > /tmp/shipsign-init.gradle
-            allprojects {
-                afterEvaluate { project ->
-                    if (project.extensions.findByName("android") != null) {
-                        def androidExt = project.extensions.getByName("android")
-                        androidExt.signingConfigs.all { sc ->
-                            if (sc.storeFile == null || !sc.storeFile.exists()) {
-                                sc.storeFile = new File("${System.getenv('PROJECT_DIR')}/debug.keystore")
-                                sc.storePassword = "android"
-                                sc.keyAlias = "androiddebugkey"
-                                sc.keyPassword = "android"
-                            }
-                        }
-                        try {
-                            androidExt.lint.checkReleaseBuilds = false
-                            androidExt.lint.abortOnError = false
-                        } catch (Exception ignored) {}
-                    }
-                }
-            }
-            EOF
+            printf '%s\n' \
+              'allprojects {' \
+              '    afterEvaluate { project ->' \
+              '        if (project.extensions.findByName("android") != null) {' \
+              '            def androidExt = project.extensions.getByName("android")' \
+              '            androidExt.signingConfigs.all { sc ->' \
+              '                if (sc.storeFile == null || !sc.storeFile.exists()) {' \
+              '                    sc.storeFile = new File(System.getenv("PROJECT_DIR") + "/debug.keystore")' \
+              '                    sc.storePassword = "android"' \
+              '                    sc.keyAlias = "androiddebugkey"' \
+              '                    sc.keyPassword = "android"' \
+              '                }' \
+              '            }' \
+              '            try {' \
+              '                androidExt.lint.checkReleaseBuilds = false' \
+              '                androidExt.lint.abortOnError = false' \
+              '            } catch (Exception ignored) {}' \
+              '        }' \
+              '    }' \
+              '}' > /tmp/shipsign-init.gradle
 
             if grep -rq "google-services" . 2>/dev/null && [ ! -f "app/google-services.json" ] && [ -d "app" ]; then
               APP_ID=$(grep -oE 'applicationId\s*=?\s*"[^"]+"' app/build.gradle* 2>/dev/null | head -n 1 | cut -d'"' -f2)
