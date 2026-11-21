@@ -73,10 +73,6 @@ jobs:
             [ -f ".env.example" ] && [ ! -f ".env" ] && cp .env.example .env
             printf "sdk.dir=%s\n" "${ANDROID_HOME:-/opt/android-sdk-linux}" > local.properties
 
-            touch gradle.properties
-            sed -i '/org\.gradle\.jvmargs/d;/org\.gradle\.parallel/d;/org\.gradle\.caching/d' gradle.properties
-            printf '\norg.gradle.jvmargs=-Xmx3584m -XX:+UseParallelGC -XX:MaxMetaspaceSize=768m\norg.gradle.parallel=true\norg.gradle.caching=true\n' >> gradle.properties
-
             if [ -n "$SHIPSIGN_SECRET" ]; then
               printf "\nGITHUB_CLIENT_SECRET=%s\n" "$SHIPSIGN_SECRET" >> .env
               printf "GITHUB_CLIENT_SECRET=%s\n" "$SHIPSIGN_SECRET" >> local.properties
@@ -139,7 +135,7 @@ jobs:
             $GRADLE_BIN assembleRelease --init-script /tmp/shipsign-init.gradle \
               -Pandroid.injected.build.abi=arm64-v8a \
               -x lint -x test \
-              --build-cache --parallel --no-daemon
+              --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
           fi
 
       - name: 4. Path B — Fallback ARM64 Debug Build
@@ -157,7 +153,7 @@ jobs:
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
               -Pandroid.injected.build.abi=arm64-v8a \
               -x lint -x test \
-              --build-cache --parallel --no-daemon
+              --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
           fi
 
       - name: 5. Path C — Universal Fallback Build
@@ -172,19 +168,11 @@ jobs:
           else
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
               -x lint -x test \
-              --parallel --no-daemon
+              --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
           fi
 
-      - name: 6. Stage & Upload Built APK
-        run: |
-          set -e
-          mkdir -p "$GITHUB_WORKSPACE/shipsign-artifacts"
-          find "$PROJECT_DIR" -name "*.apk" -exec cp {} "$GITHUB_WORKSPACE/shipsign-artifacts/" \;
-          ls -lh "$GITHUB_WORKSPACE/shipsign-artifacts/"
-
-      - name: 7. Upload Artifact
+      - name: 6. Upload Built APK
         uses: actions/upload-artifact@v7
         with:
           name: ShipSign-APK
-          path: shipsign-artifacts/*.apk
-          if-no-files-found: error
+          path: "**/*.apk"
