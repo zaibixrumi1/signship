@@ -125,6 +125,7 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
+          GRADLE_OPTS: "-Xmx4g -XX:+UseParallelGC -Dorg.gradle.daemon=false"
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -134,8 +135,9 @@ jobs:
           else
             $GRADLE_BIN assembleRelease --init-script /tmp/shipsign-init.gradle \
               -Pandroid.injected.build.abi=arm64-v8a \
+              -Pkotlin.incremental=false \
               -x lint -x test \
-              --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+              --build-cache --parallel --no-daemon
           fi
 
       - name: 4. Path B — Fallback ARM64 Debug Build
@@ -144,6 +146,7 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
+          GRADLE_OPTS: "-Xmx4g -XX:+UseParallelGC -Dorg.gradle.daemon=false"
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -152,14 +155,16 @@ jobs:
           else
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
               -Pandroid.injected.build.abi=arm64-v8a \
+              -Pkotlin.incremental=false \
               -x lint -x test \
-              --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+              --build-cache --parallel --no-daemon
           fi
 
       - name: 5. Path C — Universal Fallback Build
         if: steps.path_a.outcome != 'success' && steps.path_b.outcome != 'success'
         env:
           GITHUB_CLIENT_SECRET: ${{ secrets.SHIPSIGN_CLIENT_SECRET }}
+          GRADLE_OPTS: "-Xmx4g -XX:+UseParallelGC -Dorg.gradle.daemon=false"
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -167,8 +172,9 @@ jobs:
             flutter build apk --debug
           else
             $GRADLE_BIN assembleDebug --init-script /tmp/shipsign-init.gradle \
+              -Pkotlin.incremental=false \
               -x lint -x test \
-              --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+              --parallel --no-daemon
           fi
 
       - name: 6. Upload Built APK
@@ -176,3 +182,4 @@ jobs:
         with:
           name: ShipSign-APK
           path: "**/*.apk"
+          compression-level: 0
