@@ -73,7 +73,6 @@ jobs:
             [ -f ".env.example" ] && [ ! -f ".env" ] && cp .env.example .env
             printf "sdk.dir=%s\n" "${ANDROID_HOME:-/opt/android-sdk-linux}" > local.properties
 
-            # Override project gradle.properties so Gradle uses 5GB RAM and parallel execution
             touch gradle.properties
             sed -i '/org\.gradle\.jvmargs/d;/org\.gradle\.parallel/d;/org\.gradle\.caching/d' gradle.properties
             printf '\norg.gradle.jvmargs=-Xmx5g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g\norg.gradle.parallel=true\norg.gradle.caching=true\n' >> gradle.properties
@@ -112,8 +111,7 @@ jobs:
               '    tasks.configureEach { task ->' \
               '        if (task.name.contains("ArtProfile") ||' \
               '            task.name.contains("NativeSymbolTables") ||' \
-              '            task.name.contains("NativeDebugMetadata") ||' \
-              '            task.name.contains("optimizeReleaseResources")) {' \
+              '            task.name.contains("NativeDebugMetadata")) {' \
               '            task.enabled = false' \
               '        }' \
               '    }' \
@@ -184,9 +182,16 @@ jobs:
               --parallel --no-daemon
           fi
 
-      - name: 6. Upload Built APK
+      - name: 6. Stage & Upload Built APK
+        run: |
+          set -e
+          mkdir -p "$GITHUB_WORKSPACE/shipsign-artifacts"
+          find "$PROJECT_DIR" -name "*.apk" -exec cp {} "$GITHUB_WORKSPACE/shipsign-artifacts/" \;
+          ls -lh "$GITHUB_WORKSPACE/shipsign-artifacts/"
+
+      - name: 7. Upload Artifact
         uses: actions/upload-artifact@v7
         with:
           name: ShipSign-APK
-          path: "**/*.apk"
-          compression-level: 0
+          path: shipsign-artifacts/*.apk
+          if-no-files-found: error
