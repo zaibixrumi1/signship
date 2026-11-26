@@ -22,7 +22,11 @@ jobs:
           elif find . -not -path '*/.*' -not -path '*/node_modules/*' -name "package.json" | grep -q .; then
             echo "stack=web" >> "$GITHUB_OUTPUT"
           else
-            echo "stack=android" >> "$GITHUB_OUTPUT"
+            if find . -not -path '*/.*' \( -name "CMakeLists.txt" -o -name "*.so" \) | grep -q . || grep -rl "externalNativeBuild" --include="*.gradle" --include="*.gradle.kts" . | grep -q .; then
+              echo "stack=android" >> "$GITHUB_OUTPUT"
+            else
+              echo "stack=android-fast" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   build:
